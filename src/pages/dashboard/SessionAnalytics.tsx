@@ -219,14 +219,25 @@ const SessionAnalytics = () => {
   const performanceRanking = useMemo(() => {
     const map: Record<string, { revenue: number; sessions: number }> = {};
     filtered.forEach(s => {
-      if (!map[s.employee_id]) map[s.employee_id] = { revenue: 0, sessions: 0 };
-      map[s.employee_id].revenue += getRevenue(s);
-      map[s.employee_id].sessions++;
+      const rev = getRevenue(s);
+      const participants = participantsMap[s.id];
+      if (participants && participants.length > 0) {
+        const share = rev / participants.length;
+        participants.forEach(uid => {
+          if (!map[uid]) map[uid] = { revenue: 0, sessions: 0 };
+          map[uid].revenue += share;
+          map[uid].sessions++;
+        });
+      } else {
+        if (!map[s.employee_id]) map[s.employee_id] = { revenue: 0, sessions: 0 };
+        map[s.employee_id].revenue += rev;
+        map[s.employee_id].sessions++;
+      }
     });
     return Object.entries(map)
       .sort((a, b) => b[1].revenue - a[1].revenue)
       .map(([id, v], i) => ({ rank: i + 1, name: profiles[id] || "Unknown", ...v, avgPerSession: Math.round(v.revenue / v.sessions) }));
-  }, [filtered, profiles]);
+  }, [filtered, profiles, participantsMap]);
 
   const kpiCards = [
     { label: "Total Sessions", value: kpis.totalSessions.toString(), icon: Activity, className: "stat-card-green" },
