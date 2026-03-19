@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CalendarIcon, Users, LogIn, LogOut, XCircle, FileText, AlertCircle, StickyNote } from "lucide-react";
+import { CalendarIcon, Users, LogIn, LogOut, XCircle, FileText, AlertCircle, StickyNote, Star } from "lucide-react";
 import { format, startOfDay, endOfDay, subDays } from "date-fns";
 import { cn, formatCompact } from "@/lib/utils";
 import PremiumLoader from "@/components/PremiumLoader";
@@ -39,7 +39,6 @@ interface Participant {
   exit_time: string | null;
   exit_notes?: string | null;
   profile?: { full_name: string | null };
-  full_name: string | null;
 }
 
 interface Session {
@@ -545,6 +544,7 @@ const EmployeeSessions = () => {
                       variant={p.exit_time ? "secondary" : "default"}
                       className={cn("gap-1", !p.exit_time && "bg-success hover:bg-success/80")}
                     >
+                      {p.user_id === activeSession?.employee_id && <Star className="h-3 w-3 text-amber-500 fill-amber-500" />}
                       {p.profile?.full_name || "Unknown"}
                       {p.exit_time ? (
                         <span className="text-[10px] opacity-70">
@@ -743,7 +743,8 @@ const EmployeeSessions = () => {
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Badge variant={p.exit_time ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0.5 shrink-0 cursor-default">
+                                    <Badge variant={p.exit_time ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0.5 shrink-0 cursor-default gap-0.5">
+                                      {p.user_id === s.employee_id && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500" />}
                                       {p.profile?.full_name || "?"}
                                       {(p as any).exit_notes && <StickyNote className="h-2.5 w-2.5 ml-0.5 opacity-70" />}
                                     </Badge>
@@ -830,7 +831,8 @@ const EmployeeSessions = () => {
                                       <TooltipProvider>
                                         <Tooltip>
                                           <TooltipTrigger asChild>
-                                            <Badge variant={p.exit_time ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0.5 shrink-0 cursor-default">
+                                            <Badge variant={p.exit_time ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0.5 shrink-0 cursor-default gap-0.5">
+                                              {p.user_id === s.employee_id && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500" />}
                                               {p.profile?.full_name || "?"}
                                               {(p as any).exit_notes && <StickyNote className="h-2.5 w-2.5 ml-0.5 opacity-70" />}
                                             </Badge>
@@ -894,6 +896,20 @@ const EmployeeSessions = () => {
                             })}
                           </TableRow>
                         ))}
+                        {/* Totals Row */}
+                        {sessions.length > 0 && (
+                          <TableRow className="bg-muted/30 font-bold border-t-2">
+                            <TableCell colSpan={6} className="text-right font-bold">Totals</TableCell>
+                            <TableCell className="text-right font-bold">
+                              {formatCompact(sessions.reduce((sum, s) => sum + getSessionRevenue(s), 0))}
+                            </TableCell>
+                            {paymentMethods.map(m => (
+                              <TableCell key={m.id} className="text-right font-bold text-xs">
+                                {formatCompact(sessions.reduce((sum, s) => sum + getPaymentAmount(s, m.id), 0))}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </TooltipProvider>

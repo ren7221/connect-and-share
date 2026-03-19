@@ -17,7 +17,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CalendarIcon, Users, XCircle, Play, FileText, LogIn, Trash2, StickyNote, LogOut } from "lucide-react";
+import { CalendarIcon, Users, XCircle, Play, FileText, LogIn, Trash2, StickyNote, LogOut, Pencil, Star } from "lucide-react";
 import { format, startOfDay, endOfDay, subDays } from "date-fns";
 import { cn, formatCompact } from "@/lib/utils";
 import PremiumLoader from "@/components/PremiumLoader";
@@ -100,6 +100,12 @@ const Sessions = () => {
   const [form, setForm] = useState<Record<string, number>>({});
   const [sessionNotes, setSessionNotes] = useState("");
 
+  // Edit session state
+  const [editingSession, setEditingSession] = useState<Session | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, number>>({});
+  const [editNotes, setEditNotes] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
   // Exit notes dialog
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [exitNoteText, setExitNoteText] = useState("");
@@ -114,6 +120,15 @@ const Sessions = () => {
 
   const fetchEmployees = useCallback(async () => {
     if (!tuckshopId) return;
+
+    // Get tuckshop owner_id
+    const { data: shop } = await supabase
+      .from("tuckshops")
+      .select("owner_id")
+      .eq("id", tuckshopId)
+      .maybeSingle();
+    const ownerId = shop?.owner_id;
+
     const { data } = await supabase
       .from("employees")
       .select("id, user_id")
@@ -123,14 +138,6 @@ const Sessions = () => {
     if (data && data.length > 0) {
       const userIds = data.map(e => e.user_id!);
 
-      // Fetch admin roles so we can exclude promoted admins from collaborator list
-      const { data: adminRoles } = await supabase
-        .from("user_roles")
-        .select("user_id")
-        .in("user_id", userIds)
-        .eq("role", "tuckshop_admin" as any);
-      const adminUserIds = new Set((adminRoles || []).map(r => r.user_id));
-
       const { data: profiles } = await supabase
         .from("profiles")
         .select("id, full_name")
@@ -139,10 +146,15 @@ const Sessions = () => {
       const nameMap: Record<string, string> = {};
       profiles?.forEach(p => { nameMap[p.id] = p.full_name || "Unknown"; });
 
-      // Exclude admins (including self) from the collaborator list
+      // Owner can add everyone (including other admins) except self
+      // Non-owner admins can add everyone except the owner and self
       setEmployees(
         data
-          .filter(e => !adminUserIds.has(e.user_id!) && e.user_id !== user?.id)
+          .filter(e => {
+            if (e.user_id === user?.id) return false; // exclude self
+            if (!isOwner && e.user_id === ownerId) return false; // non-owner can't add owner
+            return true;
+          })
           .map(e => ({
             id: e.id,
             user_id: e.user_id,
@@ -150,7 +162,7 @@ const Sessions = () => {
           }))
       );
     }
-  }, [tuckshopId, user?.id]);
+  }, [tuckshopId, user?.id, isOwner]);
 
   const checkActiveSession = useCallback(async () => {
     if (!tuckshopId) return;
@@ -500,7 +512,65 @@ const Sessions = () => {
     }
   };
 
-  // Notes tab: sessions with notes, filtered
+  const openEditSession = (session: Session) => {
+    const editAmounts: Record<string, number> = {};
+    paymentMethods.forEach(m => {
+      editAmounts[m.id] = getPaymentAmount(session, m.id);
+    });
+    setEditForm(editAmounts);
+    setEditNotes(session.session_notes || "");
+    setEditingSession(session);
+  };
+
+  const handleEditSession = async () => {
+    if (!user || !editingSession || !tuckshopId) return;
+    setEditSaving(true);
+    try {
+      // Delete old session_payments
+      await supabase.from("session_payments").delete().eq("session_id", editingSession.id);
+
+      // Insert new session_payments
+      const paymentRows = paymentMethods.map(m => ({
+        session_id: editingSession.id,
+        payment_method_id: m.id,
+        amount: editForm[m.id] || 0,
+      }));
+      await supabase.from("session_payments").insert(paymentRows);
+
+      // Update legacy columns + notes
+      const columnUpdates: Record<string, any> = {};
+      paymentMethods.forEach(m => {
+        const NAME_TO_COLUMN: Record<string, string> = {
+          "Airtel Money": "airtel_money", "TNM Mpamba": "tnm_mpamba",
+          "National Bank": "national_bank", "Cash at Hand": "cash_at_hand", "Cash Outs": "cash_outs",
+        };
+        const col = NAME_TO_COLUMN[m.name];
+        if (col) columnUpdates[col] = editForm[m.id] || 0;
+      });
+      columnUpdates.session_notes = editNotes.trim() || null;
+
+      await supabase.from("daily_sessions").update(columnUpdates as any).eq("id", editingSession.id);
+
+      // Audit log
+      await supabase.from("audit_logs").insert([{
+        action: "Edited Session",
+        table_name: "daily_sessions",
+        record_id: editingSession.id,
+        tuckshop_id: tuckshopId,
+        user_id: user.id,
+        old_data: { session_payments: editingSession.session_payments, session_notes: editingSession.session_notes } as any,
+        new_data: { editForm, session_notes: editNotes.trim() || null } as any,
+      }]);
+
+      toast({ title: "Session updated" });
+      setEditingSession(null);
+      fetchSessions();
+    } catch (err: any) {
+      toast({ title: "Update failed", description: err.message, variant: "destructive" });
+    } finally {
+      setEditSaving(false);
+    }
+  };
   const sessionsWithNotes = useMemo(() => {
     return sessions.filter(s => {
       if (!s.session_notes) return false;
@@ -570,6 +640,56 @@ const Sessions = () => {
             </DialogContent>
           </Dialog>
 
+          {/* Edit Session Dialog */}
+          <Dialog open={!!editingSession} onOpenChange={(open) => !open && setEditingSession(null)}>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Pencil className="h-4 w-4" /> Edit Session Figures
+                </DialogTitle>
+                <DialogDescription>
+                  Update the financial figures for this session. Changes will be logged for audit.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {paymentMethods.map(m => (
+                    <div key={m.id}>
+                      <Label className="flex items-center gap-1">
+                        {m.name}
+                        {m.method_type === "expenditure" && (
+                          <span className="text-[10px] text-destructive font-normal">(expense)</span>
+                        )}
+                      </Label>
+                      <Input
+                        type="number"
+                        value={editForm[m.id] || 0}
+                        onChange={(e) => setEditForm({ ...editForm, [m.id]: +e.target.value })}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <Label className="flex items-center gap-1">
+                    <FileText className="h-3.5 w-3.5" /> Session Notes
+                  </Label>
+                  <Textarea
+                    placeholder="Session notes..."
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    className="mt-1.5 min-h-[60px]"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditingSession(null)}>Cancel</Button>
+                <Button onClick={handleEditSession} disabled={editSaving}>
+                  {editSaving ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {!activeSessionData ? (
             <div className="space-y-4">
               {employees.length > 0 && (
@@ -622,6 +742,7 @@ const Sessions = () => {
                         variant={p.exit_time ? "secondary" : "default"}
                         className={cn("gap-1", !p.exit_time && "bg-success hover:bg-success/80")}
                       >
+                        {p.user_id === activeSessionData?.employee_id && <Star className="h-3 w-3 text-amber-500 fill-amber-500" />}
                         {p.profile?.full_name || "Unknown"}
                         {p.exit_time && (
                           <span className="text-[10px] opacity-70">
@@ -792,27 +913,34 @@ const Sessions = () => {
                                 <span className="text-xs text-muted-foreground">Closed</span>
                               )}
                               {isOwner && (
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive/70 hover:text-destructive hover:bg-destructive/10">
-                                      <Trash2 className="h-3.5 w-3.5" />
+                                <>
+                                  {s.logout_time && (
+                                    <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => openEditSession(s)}>
+                                      <Pencil className="h-3.5 w-3.5" />
                                     </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Delete this session?</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        This action cannot be undone. This will permanently delete the session record and log the action for audit purposes.
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                      <AlertDialogAction onClick={() => handleDeleteSession(s)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                                        Delete Session
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
+                                  )}
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive/70 hover:text-destructive hover:bg-destructive/10">
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>Delete this session?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          This action cannot be undone. This will permanently delete the session record and log the action for audit purposes.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => handleDeleteSession(s)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                          Delete Session
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                </>
                               )}
                             </div>
                           </div>
@@ -845,6 +973,7 @@ const Sessions = () => {
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <Badge variant={p.exit_time ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0.5 shrink-0 cursor-default gap-0.5">
+                                          {p.user_id === s.employee_id && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500" />}
                                           {p.profile?.full_name || "?"}
                                           {(p as any).exit_notes && <StickyNote className="h-2.5 w-2.5 opacity-70" />}
                                         </Badge>
@@ -935,6 +1064,7 @@ const Sessions = () => {
                                         <Tooltip key={p.id}>
                                           <TooltipTrigger>
                                             <Badge variant={p.exit_time ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0.5 cursor-pointer gap-0.5">
+                                              {p.user_id === s.employee_id && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500" />}
                                               {p.profile?.full_name || "?"}
                                               {(p as any).exit_notes && <StickyNote className="h-2.5 w-2.5 opacity-70" />}
                                             </Badge>
@@ -971,33 +1101,55 @@ const Sessions = () => {
                                 {paymentMethods.map(m => (
                                   <TableCell key={m.id} className="text-right text-xs">{getPaymentAmount(s, m.id) ? formatCompact(getPaymentAmount(s, m.id)) : "—"}</TableCell>
                                 ))}
-                                {isAdmin && (
+                                {isOwner && (
                                   <TableCell className="text-right">
-                                    <AlertDialog>
-                                      <AlertDialogTrigger asChild>
-                                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive/70 hover:text-destructive hover:bg-destructive/10">
-                                          <Trash2 className="h-4 w-4" />
+                                    <div className="flex items-center justify-end gap-1">
+                                      {s.logout_time && (
+                                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => openEditSession(s)}>
+                                          <Pencil className="h-4 w-4" />
                                         </Button>
-                                      </AlertDialogTrigger>
-                                      <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                          <AlertDialogTitle>Delete this session?</AlertDialogTitle>
-                                          <AlertDialogDescription>
-                                            This action cannot be undone. This will permanently delete the session record, all related transactions, and log the action for audit purposes.
-                                          </AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                          <AlertDialogAction onClick={() => handleDeleteSession(s)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                                            Delete Session
-                                          </AlertDialogAction>
-                                        </AlertDialogFooter>
-                                      </AlertDialogContent>
-                                    </AlertDialog>
+                                      )}
+                                      <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive/70 hover:text-destructive hover:bg-destructive/10">
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                          <AlertDialogHeader>
+                                            <AlertDialogTitle>Delete this session?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                              This action cannot be undone. This will permanently delete the session record, all related transactions, and log the action for audit purposes.
+                                            </AlertDialogDescription>
+                                          </AlertDialogHeader>
+                                          <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={() => handleDeleteSession(s)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                              Delete Session
+                                            </AlertDialogAction>
+                                          </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                      </AlertDialog>
+                                    </div>
                                   </TableCell>
                                 )}
                               </TableRow>
                             ))}
+                            {/* Totals Row */}
+                            {sessions.length > 0 && (
+                              <TableRow className="bg-muted/30 font-bold border-t-2">
+                                <TableCell colSpan={7} className="text-right font-bold">Totals</TableCell>
+                                <TableCell className="text-right font-bold text-primary">
+                                  {formatCompact(sessions.reduce((sum, s) => sum + getRevenue(s), 0))}
+                                </TableCell>
+                                {paymentMethods.map(m => (
+                                  <TableCell key={m.id} className="text-right font-bold text-xs">
+                                    {formatCompact(sessions.reduce((sum, s) => sum + getPaymentAmount(s, m.id), 0))}
+                                  </TableCell>
+                                ))}
+                                {isOwner && <TableCell />}
+                              </TableRow>
+                            )}
                           </TableBody>
                         </Table>
                       </TooltipProvider>

@@ -57,6 +57,8 @@ const SessionAnalytics = () => {
       });
   }, [tuckshopId]);
 
+  const [participantsMap, setParticipantsMap] = useState<Record<string, string[]>>({});
+
   useEffect(() => {
     if (!tuckshopId) return;
     setLoading(true);
@@ -67,24 +69,40 @@ const SessionAnalytics = () => {
       .then(async ({ data }) => {
         const s = data ?? [];
         setSessions(s);
-        // Fetch session_payments
         const sessionIds = s.map(x => x.id);
         const spMap: Record<string, Record<string, number>> = {};
+        const partMap: Record<string, string[]> = {};
+
         if (sessionIds.length > 0) {
-          const { data: payments } = await supabase
-            .from("session_payments")
-            .select("session_id, payment_method_id, amount")
-            .in("session_id", sessionIds);
+          const [{ data: payments }, { data: parts }] = await Promise.all([
+            supabase
+              .from("session_payments")
+              .select("session_id, payment_method_id, amount")
+              .in("session_id", sessionIds),
+            supabase
+              .from("session_participants")
+              .select("session_id, user_id")
+              .in("session_id", sessionIds),
+          ]);
           if (payments) {
             payments.forEach((p: any) => {
               if (!spMap[p.session_id]) spMap[p.session_id] = {};
               spMap[p.session_id][p.payment_method_id] = p.amount;
             });
           }
+          if (parts) {
+            parts.forEach((p: any) => {
+              if (!partMap[p.session_id]) partMap[p.session_id] = [];
+              if (!partMap[p.session_id].includes(p.user_id)) partMap[p.session_id].push(p.user_id);
+            });
+          }
         }
         setSessionPaymentsMap(spMap);
-        // Fetch profiles for unique employee IDs
-        const ids = [...new Set(s.map(x => x.employee_id))];
+        setParticipantsMap(partMap);
+        // Fetch profiles for unique employee IDs AND participant IDs
+        const allUserIds = new Set(s.map(x => x.employee_id));
+        Object.values(partMap).forEach(uids => uids.forEach(uid => allUserIds.add(uid)));
+        const ids = [...allUserIds];
         if (ids.length > 0) {
           const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids);
           const map: Record<string, string> = {};
@@ -112,7 +130,12 @@ const SessionAnalytics = () => {
     return sessions.filter(s => s.employee_id === employeeFilter);
   }, [sessions, employeeFilter]);
 
-  const employees = useMemo(() => [...new Set(sessions.map(s => s.employee_id))], [sessions]);
+  // Include all participants, not just session creators
+  const employees = useMemo(() => {
+    const ids = new Set(sessions.map(s => s.employee_id));
+    Object.values(participantsMap).forEach(uids => uids.forEach(uid => ids.add(uid)));
+    return [...ids];
+  }, [sessions, participantsMap]);
 
   const kpis = useMemo(() => {
     const totalRev = filtered.reduce((s, r) => s + getRevenue(r), 0);
@@ -136,19 +159,39 @@ const SessionAnalytics = () => {
 
   const revenuePerEmployee = useMemo(() => {
     const map: Record<string, number> = {};
-    filtered.forEach(s => { map[s.employee_id] = (map[s.employee_id] || 0) + getRevenue(s); });
+    filtered.forEach(s => {
+      const rev = getRevenue(s);
+      const participants = participantsMap[s.id];
+      if (participants && participants.length > 0) {
+        // Split revenue among all participants
+        const share = rev / participants.length;
+        participants.forEach(uid => { map[uid] = (map[uid] || 0) + share; });
+      } else {
+        map[s.employee_id] = (map[s.employee_id] || 0) + rev;
+      }
+    });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([id, revenue]) => ({ name: profiles[id] || "Unknown", revenue }));
-  }, [filtered, profiles]);
+  }, [filtered, profiles, participantsMap]);
 
   const avgDurationPerEmployee = useMemo(() => {
     const map: Record<string, { total: number; count: number }> = {};
     filtered.filter(s => s.duration_minutes).forEach(s => {
-      if (!map[s.employee_id]) map[s.employee_id] = { total: 0, count: 0 };
-      map[s.employee_id].total += s.duration_minutes;
-      map[s.employee_id].count++;
+      const participants = participantsMap[s.id];
+      if (participants && participants.length > 0) {
+        participants.forEach(uid => {
+          if (!map[uid]) map[uid] = { total: 0, count: 0 };
+          map[uid].total += s.duration_minutes;
+          map[uid].count++;
+        });
+      } else {
+        if (!map[s.employee_id]) map[s.employee_id] = { total: 0, count: 0 };
+        map[s.employee_id].total += s.duration_minutes;
+        map[s.employee_id].count++;
+      }
     });
     return Object.entries(map).map(([id, v]) => ({ name: profiles[id] || "Unknown", avg: Math.round(v.total / v.count) }));
-  }, [filtered, profiles]);
+  }, [filtered, profiles, participantsMap]);
+
 
   const channelDistribution = useMemo(() => {
     const NAME_TO_COL: Record<string, string> = {
@@ -175,14 +218,25 @@ const SessionAnalytics = () => {
   const performanceRanking = useMemo(() => {
     const map: Record<string, { revenue: number; sessions: number }> = {};
     filtered.forEach(s => {
-      if (!map[s.employee_id]) map[s.employee_id] = { revenue: 0, sessions: 0 };
-      map[s.employee_id].revenue += getRevenue(s);
-      map[s.employee_id].sessions++;
+      const rev = getRevenue(s);
+      const participants = participantsMap[s.id];
+      if (participants && participants.length > 0) {
+        const share = rev / participants.length;
+        participants.forEach(uid => {
+          if (!map[uid]) map[uid] = { revenue: 0, sessions: 0 };
+          map[uid].revenue += share;
+          map[uid].sessions++;
+        });
+      } else {
+        if (!map[s.employee_id]) map[s.employee_id] = { revenue: 0, sessions: 0 };
+        map[s.employee_id].revenue += rev;
+        map[s.employee_id].sessions++;
+      }
     });
     return Object.entries(map)
       .sort((a, b) => b[1].revenue - a[1].revenue)
       .map(([id, v], i) => ({ rank: i + 1, name: profiles[id] || "Unknown", ...v, avgPerSession: Math.round(v.revenue / v.sessions) }));
-  }, [filtered, profiles]);
+  }, [filtered, profiles, participantsMap]);
 
   const kpiCards = [
     { label: "Total Sessions", value: kpis.totalSessions.toString(), icon: Activity, className: "stat-card-green" },
