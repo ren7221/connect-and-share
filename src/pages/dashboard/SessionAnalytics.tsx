@@ -57,6 +57,8 @@ const SessionAnalytics = () => {
       });
   }, [tuckshopId]);
 
+  const [participantsMap, setParticipantsMap] = useState<Record<string, string[]>>({});
+
   useEffect(() => {
     if (!tuckshopId) return;
     setLoading(true);
@@ -67,24 +69,40 @@ const SessionAnalytics = () => {
       .then(async ({ data }) => {
         const s = data ?? [];
         setSessions(s);
-        // Fetch session_payments
         const sessionIds = s.map(x => x.id);
         const spMap: Record<string, Record<string, number>> = {};
+        const partMap: Record<string, string[]> = {};
+
         if (sessionIds.length > 0) {
-          const { data: payments } = await supabase
-            .from("session_payments")
-            .select("session_id, payment_method_id, amount")
-            .in("session_id", sessionIds);
+          const [{ data: payments }, { data: parts }] = await Promise.all([
+            supabase
+              .from("session_payments")
+              .select("session_id, payment_method_id, amount")
+              .in("session_id", sessionIds),
+            supabase
+              .from("session_participants")
+              .select("session_id, user_id")
+              .in("session_id", sessionIds),
+          ]);
           if (payments) {
             payments.forEach((p: any) => {
               if (!spMap[p.session_id]) spMap[p.session_id] = {};
               spMap[p.session_id][p.payment_method_id] = p.amount;
             });
           }
+          if (parts) {
+            parts.forEach((p: any) => {
+              if (!partMap[p.session_id]) partMap[p.session_id] = [];
+              if (!partMap[p.session_id].includes(p.user_id)) partMap[p.session_id].push(p.user_id);
+            });
+          }
         }
         setSessionPaymentsMap(spMap);
-        // Fetch profiles for unique employee IDs
-        const ids = [...new Set(s.map(x => x.employee_id))];
+        setParticipantsMap(partMap);
+        // Fetch profiles for unique employee IDs AND participant IDs
+        const allUserIds = new Set(s.map(x => x.employee_id));
+        Object.values(partMap).forEach(uids => uids.forEach(uid => allUserIds.add(uid)));
+        const ids = [...allUserIds];
         if (ids.length > 0) {
           const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids);
           const map: Record<string, string> = {};
