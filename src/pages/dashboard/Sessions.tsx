@@ -689,6 +689,8 @@ const Sessions = () => {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {!activeSessionData ? (
             <div className="space-y-4">
               {employees.length > 0 && (
                 <div className="space-y-2">
