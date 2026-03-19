@@ -100,6 +100,12 @@ const Sessions = () => {
   const [form, setForm] = useState<Record<string, number>>({});
   const [sessionNotes, setSessionNotes] = useState("");
 
+  // Edit session state
+  const [editingSession, setEditingSession] = useState<Session | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, number>>({});
+  const [editNotes, setEditNotes] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
   // Exit notes dialog
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [exitNoteText, setExitNoteText] = useState("");
