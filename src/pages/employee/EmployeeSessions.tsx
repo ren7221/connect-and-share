@@ -39,7 +39,6 @@ interface Participant {
   exit_time: string | null;
   exit_notes?: string | null;
   profile?: { full_name: string | null };
-  full_name: string | null;
 }
 
 interface Session {
