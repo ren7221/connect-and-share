@@ -552,15 +552,15 @@ const Sessions = () => {
       await supabase.from("daily_sessions").update(columnUpdates as any).eq("id", editingSession.id);
 
       // Audit log
-      await supabase.from("audit_logs").insert({
+      await supabase.from("audit_logs").insert([{
         action: "Edited Session",
         table_name: "daily_sessions",
         record_id: editingSession.id,
         tuckshop_id: tuckshopId,
         user_id: user.id,
-        old_data: { session_payments: editingSession.session_payments, session_notes: editingSession.session_notes },
-        new_data: { editForm, session_notes: editNotes.trim() || null },
-      });
+        old_data: { session_payments: editingSession.session_payments, session_notes: editingSession.session_notes } as any,
+        new_data: { editForm, session_notes: editNotes.trim() || null } as any,
+      }]);
 
       toast({ title: "Session updated" });
       setEditingSession(null);
