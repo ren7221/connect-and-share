@@ -176,10 +176,21 @@ const SessionAnalytics = () => {
   const avgDurationPerEmployee = useMemo(() => {
     const map: Record<string, { total: number; count: number }> = {};
     filtered.filter(s => s.duration_minutes).forEach(s => {
-      if (!map[s.employee_id]) map[s.employee_id] = { total: 0, count: 0 };
-      map[s.employee_id].total += s.duration_minutes;
-      map[s.employee_id].count++;
+      const participants = participantsMap[s.id];
+      if (participants && participants.length > 0) {
+        participants.forEach(uid => {
+          if (!map[uid]) map[uid] = { total: 0, count: 0 };
+          map[uid].total += s.duration_minutes;
+          map[uid].count++;
+        });
+      } else {
+        if (!map[s.employee_id]) map[s.employee_id] = { total: 0, count: 0 };
+        map[s.employee_id].total += s.duration_minutes;
+        map[s.employee_id].count++;
+      }
     });
+    return Object.entries(map).map(([id, v]) => ({ name: profiles[id] || "Unknown", avg: Math.round(v.total / v.count) }));
+  }, [filtered, profiles, participantsMap]);
     return Object.entries(map).map(([id, v]) => ({ name: profiles[id] || "Unknown", avg: Math.round(v.total / v.count) }));
   }, [filtered, profiles]);
 
