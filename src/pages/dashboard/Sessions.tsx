@@ -640,7 +640,55 @@ const Sessions = () => {
             </DialogContent>
           </Dialog>
 
-          {!activeSessionData ? (
+          {/* Edit Session Dialog */}
+          <Dialog open={!!editingSession} onOpenChange={(open) => !open && setEditingSession(null)}>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Pencil className="h-4 w-4" /> Edit Session Figures
+                </DialogTitle>
+                <DialogDescription>
+                  Update the financial figures for this session. Changes will be logged for audit.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {paymentMethods.map(m => (
+                    <div key={m.id}>
+                      <Label className="flex items-center gap-1">
+                        {m.name}
+                        {m.method_type === "expenditure" && (
+                          <span className="text-[10px] text-destructive font-normal">(expense)</span>
+                        )}
+                      </Label>
+                      <Input
+                        type="number"
+                        value={editForm[m.id] || 0}
+                        onChange={(e) => setEditForm({ ...editForm, [m.id]: +e.target.value })}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <Label className="flex items-center gap-1">
+                    <FileText className="h-3.5 w-3.5" /> Session Notes
+                  </Label>
+                  <Textarea
+                    placeholder="Session notes..."
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    className="mt-1.5 min-h-[60px]"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditingSession(null)}>Cancel</Button>
+                <Button onClick={handleEditSession} disabled={editSaving}>
+                  {editSaving ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
             <div className="space-y-4">
               {employees.length > 0 && (
                 <div className="space-y-2">
