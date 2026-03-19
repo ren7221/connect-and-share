@@ -130,7 +130,12 @@ const SessionAnalytics = () => {
     return sessions.filter(s => s.employee_id === employeeFilter);
   }, [sessions, employeeFilter]);
 
-  const employees = useMemo(() => [...new Set(sessions.map(s => s.employee_id))], [sessions]);
+  // Include all participants, not just session creators
+  const employees = useMemo(() => {
+    const ids = new Set(sessions.map(s => s.employee_id));
+    Object.values(participantsMap).forEach(uids => uids.forEach(uid => ids.add(uid)));
+    return [...ids];
+  }, [sessions, participantsMap]);
 
   const kpis = useMemo(() => {
     const totalRev = filtered.reduce((s, r) => s + getRevenue(r), 0);
