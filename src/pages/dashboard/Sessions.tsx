@@ -512,7 +512,65 @@ const Sessions = () => {
     }
   };
 
-  // Notes tab: sessions with notes, filtered
+  const openEditSession = (session: Session) => {
+    const editAmounts: Record<string, number> = {};
+    paymentMethods.forEach(m => {
+      editAmounts[m.id] = getPaymentAmount(session, m.id);
+    });
+    setEditForm(editAmounts);
+    setEditNotes(session.session_notes || "");
+    setEditingSession(session);
+  };
+
+  const handleEditSession = async () => {
+    if (!user || !editingSession || !tuckshopId) return;
+    setEditSaving(true);
+    try {
+      // Delete old session_payments
+      await supabase.from("session_payments").delete().eq("session_id", editingSession.id);
+
+      // Insert new session_payments
+      const paymentRows = paymentMethods.map(m => ({
+        session_id: editingSession.id,
+        payment_method_id: m.id,
+        amount: editForm[m.id] || 0,
+      }));
+      await supabase.from("session_payments").insert(paymentRows);
+
+      // Update legacy columns + notes
+      const columnUpdates: Record<string, any> = {};
+      paymentMethods.forEach(m => {
+        const NAME_TO_COLUMN: Record<string, string> = {
+          "Airtel Money": "airtel_money", "TNM Mpamba": "tnm_mpamba",
+          "National Bank": "national_bank", "Cash at Hand": "cash_at_hand", "Cash Outs": "cash_outs",
+        };
+        const col = NAME_TO_COLUMN[m.name];
+        if (col) columnUpdates[col] = editForm[m.id] || 0;
+      });
+      columnUpdates.session_notes = editNotes.trim() || null;
+
+      await supabase.from("daily_sessions").update(columnUpdates as any).eq("id", editingSession.id);
+
+      // Audit log
+      await supabase.from("audit_logs").insert({
+        action: "Edited Session",
+        table_name: "daily_sessions",
+        record_id: editingSession.id,
+        tuckshop_id: tuckshopId,
+        user_id: user.id,
+        old_data: { session_payments: editingSession.session_payments, session_notes: editingSession.session_notes },
+        new_data: { editForm, session_notes: editNotes.trim() || null },
+      });
+
+      toast({ title: "Session updated" });
+      setEditingSession(null);
+      fetchSessions();
+    } catch (err: any) {
+      toast({ title: "Update failed", description: err.message, variant: "destructive" });
+    } finally {
+      setEditSaving(false);
+    }
+  };
   const sessionsWithNotes = useMemo(() => {
     return sessions.filter(s => {
       if (!s.session_notes) return false;
