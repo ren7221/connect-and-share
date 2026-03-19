@@ -965,6 +965,7 @@ const Sessions = () => {
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <Badge variant={p.exit_time ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0.5 shrink-0 cursor-default gap-0.5">
+                                          {p.user_id === s.employee_id && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500" />}
                                           {p.profile?.full_name || "?"}
                                           {(p as any).exit_notes && <StickyNote className="h-2.5 w-2.5 opacity-70" />}
                                         </Badge>
