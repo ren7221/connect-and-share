@@ -544,6 +544,7 @@ const EmployeeSessions = () => {
                       variant={p.exit_time ? "secondary" : "default"}
                       className={cn("gap-1", !p.exit_time && "bg-success hover:bg-success/80")}
                     >
+                      {p.user_id === activeSession?.employee_id && <Star className="h-3 w-3 text-amber-500 fill-amber-500" />}
                       {p.profile?.full_name || "Unknown"}
                       {p.exit_time ? (
                         <span className="text-[10px] opacity-70">
