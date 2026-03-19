@@ -114,6 +114,15 @@ const Sessions = () => {
 
   const fetchEmployees = useCallback(async () => {
     if (!tuckshopId) return;
+
+    // Get tuckshop owner_id
+    const { data: shop } = await supabase
+      .from("tuckshops")
+      .select("owner_id")
+      .eq("id", tuckshopId)
+      .maybeSingle();
+    const ownerId = shop?.owner_id;
+
     const { data } = await supabase
       .from("employees")
       .select("id, user_id")
@@ -123,14 +132,6 @@ const Sessions = () => {
     if (data && data.length > 0) {
       const userIds = data.map(e => e.user_id!);
 
-      // Fetch admin roles so we can exclude promoted admins from collaborator list
-      const { data: adminRoles } = await supabase
-        .from("user_roles")
-        .select("user_id")
-        .in("user_id", userIds)
-        .eq("role", "tuckshop_admin" as any);
-      const adminUserIds = new Set((adminRoles || []).map(r => r.user_id));
-
       const { data: profiles } = await supabase
         .from("profiles")
         .select("id, full_name")
@@ -139,10 +140,15 @@ const Sessions = () => {
       const nameMap: Record<string, string> = {};
       profiles?.forEach(p => { nameMap[p.id] = p.full_name || "Unknown"; });
 
-      // Exclude admins (including self) from the collaborator list
+      // Owner can add everyone (including other admins) except self
+      // Non-owner admins can add everyone except the owner and self
       setEmployees(
         data
-          .filter(e => !adminUserIds.has(e.user_id!) && e.user_id !== user?.id)
+          .filter(e => {
+            if (e.user_id === user?.id) return false; // exclude self
+            if (!isOwner && e.user_id === ownerId) return false; // non-owner can't add owner
+            return true;
+          })
           .map(e => ({
             id: e.id,
             user_id: e.user_id,
@@ -150,7 +156,7 @@ const Sessions = () => {
           }))
       );
     }
-  }, [tuckshopId, user?.id]);
+  }, [tuckshopId, user?.id, isOwner]);
 
   const checkActiveSession = useCallback(async () => {
     if (!tuckshopId) return;
