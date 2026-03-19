@@ -1124,6 +1124,21 @@ const Sessions = () => {
                                 )}
                               </TableRow>
                             ))}
+                            {/* Totals Row */}
+                            {sessions.length > 0 && (
+                              <TableRow className="bg-muted/30 font-bold border-t-2">
+                                <TableCell colSpan={7} className="text-right font-bold">Totals</TableCell>
+                                <TableCell className="text-right font-bold text-primary">
+                                  {formatCompact(sessions.reduce((sum, s) => sum + getRevenue(s), 0))}
+                                </TableCell>
+                                {paymentMethods.map(m => (
+                                  <TableCell key={m.id} className="text-right font-bold text-xs">
+                                    {formatCompact(sessions.reduce((sum, s) => sum + getPaymentAmount(s, m.id), 0))}
+                                  </TableCell>
+                                ))}
+                                {isOwner && <TableCell />}
+                              </TableRow>
+                            )}
                           </TableBody>
                         </Table>
                       </TooltipProvider>
