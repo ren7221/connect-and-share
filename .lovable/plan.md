@@ -1,106 +1,46 @@
 
 
-# Enhancement Plan: Session Notes, Join Fix, Reports, Payment Classification, UI Polish
+## Plan: Session Management Improvements
 
-## 1. Database Migration
+### Summary
+Fix build errors, add session edit capability for shop owner, improve collaborator selection, add owner star indicator, and fix revenue total display in session history.
 
-Add `session_notes` column to `daily_sessions` and `method_type` column to `payment_methods`:
+### Issues to Address
 
-```sql
--- Session notes for end-of-session review
-ALTER TABLE daily_sessions ADD COLUMN session_notes text;
+1. **Build error** in `EmployeeSessions.tsx`: `Participant` interface requires `full_name` but the data from Supabase doesn't have it directly. Fix by removing `full_name` from the `Participant` interface (it's accessed via `profile.full_name` already).
 
--- Payment method classification: revenue vs expenditure
-ALTER TABLE payment_methods ADD COLUMN method_type text NOT NULL DEFAULT 'revenue'
-  CHECK (method_type IN ('revenue', 'expenditure'));
-```
+2. **Admin (shop creator/owner) can edit submitted session figures**: Add an "Edit" button next to sessions in the admin Sessions page. Opens a dialog pre-filled with existing payment amounts, allowing the owner to update `session_payments` and `daily_sessions` columns. Log edits to `audit_logs`.
 
-No new RLS policies needed — existing policies cover these columns.
+3. **Owner can add all participants (including other admins) when starting a session**: Currently `fetchEmployees` in `Sessions.tsx` filters out admin users. Change to include admins (other tuckshop_admins) in the collaborator list, but still exclude the current user (self). Non-owner admins should NOT be able to add the shop owner/creator.
 
----
+4. **Session history not showing total revenue for older sessions**: The `getRevenue`/`getSessionRevenue` functions fall back to legacy columns when no `session_payments` exist. The issue is that `session_payments` might not be fetched for all sessions (e.g., due to RLS or the 1000-row limit). Ensure all session IDs are included in the payments query by batching if needed, and always show revenue.
 
-## 2. Session Notes (Optional Field on Close/Exit)
+5. **Star indicator on session creator**: In session history participant badges, show a star icon next to the participant whose `user_id === session.employee_id` to indicate they started/own that session.
 
-**Files:** `EmployeeSessions.tsx`, `Sessions.tsx`
+6. **Employee average calculation for multi-participant sessions**: In analytics, when calculating per-employee averages, count each session where the employee participated (via `session_participants`), not just sessions where `employee_id` matches.
 
-- Add a `Textarea` field labeled "Session Notes (optional)" in both the close-session form (admin) and exit-session flow (employee individual exit)
-- On close: include `session_notes` in the `daily_sessions` update
-- On individual exit: store note in a new state but don't block submission — the note gets saved when session is fully closed
-- Display notes in session history table as an expandable row or tooltip icon when present
+### Technical Details
 
----
+**File: `src/pages/employee/EmployeeSessions.tsx`**
+- Remove `full_name` from the `Participant` interface (lines 35-43). The `full_name` property is never used directly; `profile.full_name` is used everywhere.
+- Fix the type assertions at lines 147 and 165 by adding `full_name: profileMap[p.user_id] || "Unknown"` to the mapped objects OR simply remove `full_name` from the interface.
 
-## 3. Fix Duplicate Join Bug
+**File: `src/pages/dashboard/Sessions.tsx`**
+- **Edit session dialog**: Add state for `editingSession`, `editForm`, `editNotes`. Add a `handleEditSession` function that updates `session_payments` (delete old, insert new) and `daily_sessions` columns + logs to `audit_logs`. Add an edit (Pencil) icon button next to delete for owner. Show a Dialog with payment method inputs pre-filled.
+- **Collaborator list**: In `fetchEmployees`, remove the filter that excludes admin users. Keep filtering out `user.id` (self). Add logic: if current user is NOT the owner, also filter out the owner's user ID from the list.
+- **Star on creator**: In participant badges (both mobile and desktop views in both files), check if `p.user_id === s.employee_id` and render a star icon.
 
-**Files:** `EmployeeSessions.tsx`
+**File: `src/pages/dashboard/SessionAnalytics.tsx` (if applicable)**
+- Update employee average calculations to use `session_participants` data instead of just `employee_id`.
 
-The bug: when the current user is the session creator (`employee_id === user.id`) AND is already in `session_participants`, the UI still shows "Join Session" if `myParticipation` check fails (e.g., the creator auto-joined but the check doesn't account for being the creator).
+**Database**: No schema changes needed. The `session_payments` table already supports delete+insert for edits. Owner already has full access via RLS policies.
 
-**Fix:** In `renderActiveSessionCard()`, change the join condition from `!isParticipating` to `!isParticipating && !isSessionCreator`. Also add a backend guard: before inserting into `session_participants`, check if a row already exists for this `(session_id, user_id)`. Show "Active – You Are a Participant" badge instead of Join button.
+### Steps
 
-Add a unique constraint via migration:
-```sql
-CREATE UNIQUE INDEX idx_unique_active_participant 
-  ON session_participants(session_id, user_id) WHERE exit_time IS NULL;
-```
-
----
-
-## 4. Payment Method Classification (Revenue/Expenditure)
-
-**Files:** `PaymentMethods.tsx`, `EmployeeSessions.tsx`, `Sessions.tsx`, `Reports.tsx`, `Analytics.tsx`
-
-- **PaymentMethods.tsx:** Add a `Select` dropdown in the add/edit dialog: "Revenue Source" or "Expenditure Source". Display a badge per method in the table showing its type.
-- **Session pages:** When calculating totals, revenue methods add to income, expenditure methods subtract. Replace the hardcoded `Cash Outs` check with `method_type === 'expenditure'`.
-- **Reports:** Separate revenue and expenditure streams in generated reports with subtotals for each.
-- **Analytics:** Add revenue vs expenditure breakdown in charts.
-
----
-
-## 5. Enhanced Reports & PDF Generation
-
-**Files:** `Reports.tsx`
-
-Upgrade the "Sessions" report type to include:
-- Session start/end times, duration
-- All participants with join/exit timestamps
-- Per-method financial breakdown with revenue/expenditure classification
-- Net balance reconciliation (total revenue - total expenditure)
-- Session notes when present
-- Discrepancy highlighting
-
-**PDF branding upgrade:**
-- Add MUST Business logo (`/icon-192x192.png`) as base64 in header
-- Add tuckshop name prominently
-- Add generation timestamp and date range
-- Structured financial tables with revenue/expenditure separation
-- Professional footer with page info
-
-Fetch `session_participants` + `profiles` + `session_payments` + `payment_methods` when generating session reports.
-
----
-
-## 6. UI/UX Animation Polish
-
-**Files:** `Index.tsx`, sidebar components, dashboard pages
-
-- Add `will-change-transform` to animated elements for GPU acceleration
-- Use `transform3d` in framer-motion for hardware acceleration
-- Ensure mobile drawer uses `will-change: transform` 
-- Add `transition-gpu` utility class usage across components
-- This is incremental CSS — no major refactoring needed
-
----
-
-## Files Modified Summary
-
-| File | Changes |
-|------|---------|
-| Migration SQL | `session_notes` column, `method_type` column, unique participant index |
-| `EmployeeSessions.tsx` | Session notes textarea, fix join bug (creator check), expenditure-aware revenue calc |
-| `Sessions.tsx` | Session notes textarea on close, expenditure-aware calc, notes in history |
-| `PaymentMethods.tsx` | Add method_type selector (revenue/expenditure), display badge |
-| `Reports.tsx` | Enhanced session report with participants/notes/classification, branded PDF |
-| `Analytics.tsx` | Revenue vs expenditure breakdown |
-| `Index.tsx` | GPU-accelerated animations |
+1. Fix `Participant` interface in both files (remove `full_name` requirement or make optional)
+2. Add edit session functionality to admin `Sessions.tsx` (edit dialog, update handler)
+3. Update collaborator fetching to include other admins for owner, exclude owner for non-owner admins
+4. Add star indicator on session creator in participant badges (both files, mobile + desktop)
+5. Fix revenue display — ensure session_payments are fetched for ALL sessions regardless of date filter, and add a totals row at the bottom of the session history table
+6. Update analytics employee averages to count participation-based sessions
 
