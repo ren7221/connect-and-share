@@ -159,9 +159,19 @@ const SessionAnalytics = () => {
 
   const revenuePerEmployee = useMemo(() => {
     const map: Record<string, number> = {};
-    filtered.forEach(s => { map[s.employee_id] = (map[s.employee_id] || 0) + getRevenue(s); });
+    filtered.forEach(s => {
+      const rev = getRevenue(s);
+      const participants = participantsMap[s.id];
+      if (participants && participants.length > 0) {
+        // Split revenue among all participants
+        const share = rev / participants.length;
+        participants.forEach(uid => { map[uid] = (map[uid] || 0) + share; });
+      } else {
+        map[s.employee_id] = (map[s.employee_id] || 0) + rev;
+      }
+    });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([id, revenue]) => ({ name: profiles[id] || "Unknown", revenue }));
-  }, [filtered, profiles]);
+  }, [filtered, profiles, participantsMap]);
 
   const avgDurationPerEmployee = useMemo(() => {
     const map: Record<string, { total: number; count: number }> = {};
