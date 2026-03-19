@@ -1090,29 +1090,36 @@ const Sessions = () => {
                                 {paymentMethods.map(m => (
                                   <TableCell key={m.id} className="text-right text-xs">{getPaymentAmount(s, m.id) ? formatCompact(getPaymentAmount(s, m.id)) : "—"}</TableCell>
                                 ))}
-                                {isAdmin && (
+                                {isOwner && (
                                   <TableCell className="text-right">
-                                    <AlertDialog>
-                                      <AlertDialogTrigger asChild>
-                                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive/70 hover:text-destructive hover:bg-destructive/10">
-                                          <Trash2 className="h-4 w-4" />
+                                    <div className="flex items-center justify-end gap-1">
+                                      {s.logout_time && (
+                                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => openEditSession(s)}>
+                                          <Pencil className="h-4 w-4" />
                                         </Button>
-                                      </AlertDialogTrigger>
-                                      <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                          <AlertDialogTitle>Delete this session?</AlertDialogTitle>
-                                          <AlertDialogDescription>
-                                            This action cannot be undone. This will permanently delete the session record, all related transactions, and log the action for audit purposes.
-                                          </AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                          <AlertDialogAction onClick={() => handleDeleteSession(s)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                                            Delete Session
-                                          </AlertDialogAction>
-                                        </AlertDialogFooter>
-                                      </AlertDialogContent>
-                                    </AlertDialog>
+                                      )}
+                                      <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive/70 hover:text-destructive hover:bg-destructive/10">
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                          <AlertDialogHeader>
+                                            <AlertDialogTitle>Delete this session?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                              This action cannot be undone. This will permanently delete the session record, all related transactions, and log the action for audit purposes.
+                                            </AlertDialogDescription>
+                                          </AlertDialogHeader>
+                                          <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={() => handleDeleteSession(s)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                              Delete Session
+                                            </AlertDialogAction>
+                                          </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                      </AlertDialog>
+                                    </div>
                                   </TableCell>
                                 )}
                               </TableRow>
