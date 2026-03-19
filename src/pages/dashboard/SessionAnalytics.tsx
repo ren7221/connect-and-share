@@ -191,8 +191,7 @@ const SessionAnalytics = () => {
     });
     return Object.entries(map).map(([id, v]) => ({ name: profiles[id] || "Unknown", avg: Math.round(v.total / v.count) }));
   }, [filtered, profiles, participantsMap]);
-    return Object.entries(map).map(([id, v]) => ({ name: profiles[id] || "Unknown", avg: Math.round(v.total / v.count) }));
-  }, [filtered, profiles]);
+
 
   const channelDistribution = useMemo(() => {
     const NAME_TO_COL: Record<string, string> = {
