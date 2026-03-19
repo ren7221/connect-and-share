@@ -895,6 +895,20 @@ const EmployeeSessions = () => {
                             })}
                           </TableRow>
                         ))}
+                        {/* Totals Row */}
+                        {sessions.length > 0 && (
+                          <TableRow className="bg-muted/30 font-bold border-t-2">
+                            <TableCell colSpan={6} className="text-right font-bold">Totals</TableCell>
+                            <TableCell className="text-right font-bold">
+                              {formatCompact(sessions.reduce((sum, s) => sum + getSessionRevenue(s), 0))}
+                            </TableCell>
+                            {paymentMethods.map(m => (
+                              <TableCell key={m.id} className="text-right font-bold text-xs">
+                                {formatCompact(sessions.reduce((sum, s) => sum + getPaymentAmount(s, m.id), 0))}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </TooltipProvider>
