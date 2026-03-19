@@ -286,7 +286,6 @@ export type Database = {
       }
       session_participants: {
         Row: {
-          exit_notes: string | null
           exit_time: string | null
           id: string
           join_time: string
@@ -295,7 +294,6 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          exit_notes?: string | null
           exit_time?: string | null
           id?: string
           join_time?: string
@@ -304,7 +302,6 @@ export type Database = {
           user_id: string
         }
         Update: {
-          exit_notes?: string | null
           exit_time?: string | null
           id?: string
           join_time?: string
@@ -619,10 +616,6 @@ export type Database = {
       get_active_tuckshop_session: {
         Args: { _tuckshop_id: string }
         Returns: string
-      }
-      get_tuckshop_admin_count: {
-        Args: { _tuckshop_id: string }
-        Returns: number
       }
       get_user_tuckshop_id: { Args: { _user_id: string }; Returns: string }
       has_employee_permission: {
