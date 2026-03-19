@@ -17,7 +17,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CalendarIcon, Users, XCircle, Play, FileText, LogIn, Trash2, StickyNote, LogOut } from "lucide-react";
+import { CalendarIcon, Users, XCircle, Play, FileText, LogIn, Trash2, StickyNote, LogOut, Pencil, Star } from "lucide-react";
 import { format, startOfDay, endOfDay, subDays } from "date-fns";
 import { cn, formatCompact } from "@/lib/utils";
 import PremiumLoader from "@/components/PremiumLoader";
